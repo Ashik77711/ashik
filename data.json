@@ -11,6 +11,16 @@
     },
     "badges": [
       {
+        "name": "Owner",
+        "image": "https://cdn3.emoji.gg/emojis/561031-king.png",
+        "color": "#9b59b6"
+      },
+      {
+        "name": "Winner Of TuZhi",
+        "image": "https://cdn3.emoji.gg/emojis/575836-chalice.png",
+        "color": "#9b59b6"
+      },
+      {
         "name": "HypeSquad Balance",
         "image": "https://cdn.discordapp.com/badge-icons/8a88d63823d8a71cd5e390baa45efa02.png",
         "color": "#9b59b6"
