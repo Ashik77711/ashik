@@ -1,219 +1,276 @@
 /* ═══════════════════════════════════════════════
-   TuZhi Deco — spooky-ring  v2
+   TuZhi Deco — spooky-ring  v3
    Evil red-dark creature ring
-   • All creatures OUTSIDE avatar circle (r>52)
-   • Red/crimson theme, no pink
-   • Glow only on eyes & light details
-   • No rotation — pulse + flicker only
+   • Eyes BLINK independently per creature
+   • Glow CONSTANT — never fades out
+   • Extra effects: blood drip animation, eyelid blink, ember particles
    ═══════════════════════════════════════════════ */
 (function(){
   const cv = document.getElementById('decoCanvas');
   if(!cv) return;
   const ctx = cv.getContext('2d');
-  const W=160,H=160,CX=80,CY=80;
+  const W=160, H=160, CX=80, CY=80;
 
-  /* ── PALETTE ── */
   const BLK  = '#0a0005';
   const DARK = '#180008';
   const D2   = '#200010';
   const RED  = '#cc0000';
   const RED2 = '#ff2200';
-  const RED3 = '#ff6644';
-  const BLD  = '#8b0000';   /* blood dark */
+  const BLD  = '#8b0000';
   const WH   = '#ffffff';
 
-  /* Safe outer radius — avatar fills r≈50, we start at r=56 */
-  const INNER = 56;   /* nothing drawn inside this */
-  const OUTER = 76;   /* creatures mostly inside this */
+  const INNER = 56;
 
-  let t=0, raf;
+  let t = 0, raf;
 
-  /* ── UTILS ── */
+  /* ════════════════════════════════════════
+     BLINK SYSTEM
+     Each eye group has independent blink timer.
+     blink() returns eyelid close ratio 0..1
+     (0=open, 1=fully closed)
+  ════════════════════════════════════════ */
+  function makeBlinker(interval, dur){
+    /* interval = frames between blinks, dur = blink duration frames */
+    return { phase:Math.floor(Math.random()*interval), interval, dur };
+  }
+  function blinkVal(b){
+    const f = (t + b.phase) % b.interval;
+    if(f > b.dur) return 0;          /* open */
+    const h = b.dur * 0.5;
+    return f < h ? f/h : (b.dur-f)/h; /* 0→1→0 triangle */
+  }
+
+  /* Individual blinkers per creature */
+  const BLINK = {
+    skull : makeBlinker(140, 7),
+    ghost : makeBlinker(190, 8),
+    demon : makeBlinker(160, 6),
+    wing  : makeBlinker(220, 9),
+    eye   : makeBlinker(110, 5),   /* floating eyeball */
+    cat   : makeBlinker(170, 8),
+  };
+
+  /* ════════════════════════════════════════
+     CONSTANT GLOW — min 0.82, pulse above
+  ════════════════════════════════════════ */
+  /* gGlow never goes below 0.82 */
+  let gGlow = 0.9;
+
   const sv = ctx.save.bind(ctx);
   const rs = ctx.restore.bind(ctx);
 
   function fill(color, blur, alpha){
     ctx.fillStyle   = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur  = blur  || 0;
-    ctx.globalAlpha = alpha || 1;
+    ctx.shadowBlur  = Math.max(blur||0, 0);
+    ctx.globalAlpha = Math.min(Math.max(alpha||1, 0), 1);
   }
-  function stroke(color, lw, blur, alpha){
+  function stk(color, lw, blur, alpha){
     ctx.strokeStyle = color;
-    ctx.lineWidth   = lw    || 1;
+    ctx.lineWidth   = lw   || 1;
     ctx.shadowColor = color;
-    ctx.shadowBlur  = blur  || 0;
-    ctx.globalAlpha = alpha || 1;
+    ctx.shadowBlur  = blur || 0;
+    ctx.globalAlpha = Math.min(Math.max(alpha||1, 0), 1);
   }
+  function p2c(a,r){ return [CX+Math.cos(a)*r, CY+Math.sin(a)*r]; }
 
-  /* polar → canvas coords */
-  function p2c(angle, r){ return [CX + Math.cos(angle)*r, CY + Math.sin(angle)*r]; }
-
-  /* Draw an evil X-eye at (x,y) radius r */
-  function xEye(x,y,r,glow){
+  /* ── EYELID BLINK helper ──
+     Draws a filled eyelid arc over the eye.
+     bv = blink value 0(open)..1(closed)             */
+  function drawEyelid(x,y,r,bv,colorBody){
+    if(bv < 0.02) return;
     sv();
-    /* white eyeball */
-    fill(WH, 10*glow, 0.92);
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    /* red iris */
-    fill(RED2, 6*glow, 0.9);
-    ctx.beginPath(); ctx.arc(x,y,r*0.6,0,Math.PI*2); ctx.fill();
-    /* dark pupil */
-    fill(BLK, 0, 1);
-    ctx.beginPath(); ctx.arc(x,y,r*0.28,0,Math.PI*2); ctx.fill();
-    /* blood X */
-    ctx.strokeStyle=BLD; ctx.lineWidth=r*0.5; ctx.lineCap='round';
-    ctx.shadowColor=RED; ctx.shadowBlur=4*glow; ctx.globalAlpha=0.85;
-    const o=r*0.52;
-    ctx.beginPath(); ctx.moveTo(x-o,y-o); ctx.lineTo(x+o,y+o); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x+o,y-o); ctx.lineTo(x-o,y+o); ctx.stroke();
-    /* tiny highlight */
-    fill(WH,0,0.8);
-    ctx.beginPath(); ctx.arc(x-r*0.28,y-r*0.28,r*0.18,0,Math.PI*2); ctx.fill();
+    /* eyelid closes downward — clip to upper semicircle */
+    ctx.beginPath();
+    ctx.arc(x, y, r+0.5, Math.PI, 0);              /* top arc */
+    ctx.lineTo(x+r+0.5, y + (r+0.5)*2*bv - (r+0.5));
+    ctx.arc(x, y + (r+0.5)*2*bv - (r+0.5),
+            r+0.5, 0, Math.PI, true);
+    ctx.closePath();
+    ctx.fillStyle   = colorBody || DARK;
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+    ctx.fill();
+    /* thin red eyelid line */
+    ctx.beginPath();
+    ctx.arc(x, y + (r+0.5)*2*bv - (r+0.5), r+0.5, Math.PI*1.05, Math.PI*1.95);
+    ctx.strokeStyle = RED2;
+    ctx.lineWidth   = 0.8;
+    ctx.shadowColor = RED2;
+    ctx.shadowBlur  = 6;
+    ctx.globalAlpha = 0.85;
+    ctx.stroke();
     rs();
   }
 
-  /* hollow dot eye */
-  function hollowEye(x,y,r,glow){
+  /* ── X-EYE with blink ── */
+  function xEye(x,y,r,blinker,bodyColor){
+    const bv = blinkVal(blinker);
     sv();
-    fill(WH,8*glow,0.85);
+    /* outer glow — CONSTANT */
+    fill(RED2, 16, 0.55);
+    ctx.beginPath(); ctx.arc(x,y,r+2,0,Math.PI*2); ctx.fill();
+    /* white */
+    fill(WH, 0, 1);
     ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    fill(RED2,5*glow,0.8);
+    /* red iris */
+    fill(RED2, 8, 0.95);
+    ctx.beginPath(); ctx.arc(x,y,r*0.62,0,Math.PI*2); ctx.fill();
+    /* black pupil */
+    fill(BLK, 0, 1);
+    ctx.beginPath(); ctx.arc(x,y,r*0.28,0,Math.PI*2); ctx.fill();
+    /* X slash */
+    ctx.strokeStyle=BLD; ctx.lineWidth=r*0.5; ctx.lineCap='round';
+    ctx.shadowColor=RED2; ctx.shadowBlur=6; ctx.globalAlpha=0.9;
+    const o=r*0.52;
+    ctx.beginPath(); ctx.moveTo(x-o,y-o); ctx.lineTo(x+o,y+o); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+o,y-o); ctx.lineTo(x-o,y+o); ctx.stroke();
+    /* highlight */
+    fill(WH,0,0.85);
+    ctx.beginPath(); ctx.arc(x-r*0.28,y-r*0.3,r*0.18,0,Math.PI*2); ctx.fill();
+    rs();
+    /* eyelid on top */
+    drawEyelid(x,y,r,bv,bodyColor||DARK);
+  }
+
+  /* ── HOLLOW DOT-EYE with blink ── */
+  function hollowEye(x,y,r,blinker,bodyColor){
+    const bv = blinkVal(blinker);
+    sv();
+    fill(RED2,14,0.5);
+    ctx.beginPath(); ctx.arc(x,y,r+1.5,0,Math.PI*2); ctx.fill();
+    fill(WH,0,0.92);
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    fill(RED2,7,0.9);
     ctx.beginPath(); ctx.arc(x,y,r*0.6,0,Math.PI*2); ctx.fill();
     fill(BLK,0,1);
     ctx.beginPath(); ctx.arc(x,y,r*0.3,0,Math.PI*2); ctx.fill();
     rs();
+    drawEyelid(x,y,r,bv,bodyColor||DARK);
   }
 
-  /* blood drip */
-  function drip(x,y,len,w,glow){
+  /* blood drip static */
+  function drip(x,y,len,w){
     sv();
-    fill(BLD, 3*glow, 0.9);
+    fill(BLD, 4, 0.9);
     ctx.beginPath();
     ctx.moveTo(x-w,y);
-    ctx.quadraticCurveTo(x-w*1.8, y+len*0.6, x, y+len);
-    ctx.quadraticCurveTo(x+w*1.8, y+len*0.6, x+w, y);
+    ctx.quadraticCurveTo(x-w*1.8,y+len*0.6,x,y+len);
+    ctx.quadraticCurveTo(x+w*1.8,y+len*0.6,x+w,y);
     ctx.closePath(); ctx.fill();
-    /* bright tip drop */
-    fill(RED2, 5*glow, 0.7);
-    ctx.beginPath(); ctx.arc(x, y+len, w*1.1, 0, Math.PI*2); ctx.fill();
+    /* drip glow tip */
+    fill(RED2, 7, 0.75);
+    ctx.beginPath(); ctx.arc(x,y+len,w*1.1,0,Math.PI*2); ctx.fill();
     rs();
   }
 
-  /* ═══════════════════════════════════════════
-     CREATURES — all strictly outside r=INNER
-  ═══════════════════════════════════════════ */
+  /* animated blood drip — elongates over time */
+  const DRIPS = [
+    { x:80,  base:21, len:0, maxLen:9,  speed:0.06, w:1.8, wait:80  },
+    { x:72,  base:22, len:0, maxLen:7,  speed:0.05, w:1.5, wait:160 },
+    { x:88,  base:21, len:0, maxLen:8,  speed:0.055,w:1.6, wait:220 },
+    { x:CX,  base:CY+INNER, len:0, maxLen:11, speed:0.07, w:2, wait:100 },
+  ];
+  function updateDrips(){
+    DRIPS.forEach(d=>{
+      if(t < d.wait){ d.len=0; return; }
+      d.len = Math.min(d.len + d.speed, d.maxLen);
+      if(d.len >= d.maxLen){ d.len=0; d.wait=t+80+Math.random()*120; }
+    });
+  }
+  function drawDrips(){
+    DRIPS.forEach(d=>{
+      if(d.len < 0.5) return;
+      drip(d.x, d.base, d.len, d.w);
+    });
+  }
 
-  /* ── TOP: SKULL (11–1 o'clock, y ≈ 4–20) ── */
+  /* ═══ CREATURES ═══ */
+
   function drawSkull(g){
     sv();
-    const sx=80, sy=10;   /* sits above avatar */
-
-    /* cranium */
-    fill(DARK, 6*g, 1);
+    const sx=80, sy=10;
+    fill(DARK,8,1);
     ctx.beginPath(); ctx.arc(sx,sy,11,0,Math.PI*2); ctx.fill();
-
-    /* jawbone */
-    fill(DARK,4*g,1);
+    /* jaw */
+    fill(DARK,5,1);
     ctx.beginPath();
     ctx.moveTo(sx-8,sy+6);
     ctx.bezierCurveTo(sx-9,sy+14,sx-5,sy+18,sx,sy+18);
     ctx.bezierCurveTo(sx+5,sy+18,sx+9,sy+14,sx+8,sy+6);
     ctx.fill();
-
-    /* teeth — blood red */
-    fill(BLD,3*g,0.9);
+    /* teeth */
+    fill(WH,4,0.9);
     [-5,-1.5,2,5.5].forEach(ox=>{
       ctx.beginPath();
-      ctx.moveTo(sx+ox, sy+11);
-      ctx.lineTo(sx+ox+1.5, sy+16);
-      ctx.lineTo(sx+ox+3, sy+11);
+      ctx.moveTo(sx+ox,sy+11); ctx.lineTo(sx+ox+1.5,sy+16); ctx.lineTo(sx+ox+3,sy+11);
       ctx.fill();
     });
-
-    /* X eyes */
-    xEye(sx-5, sy-1, 3.5, g);
-    xEye(sx+5, sy-1, 3.5, g);
-
+    fill(RED2,3,0.6);
+    ctx.beginPath(); ctx.arc(sx-3,sy+15,1.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx+4,sy+15,1.5,0,Math.PI*2); ctx.fill();
+    /* eyes */
+    xEye(sx-5,sy-1,3.5,BLINK.skull,DARK);
+    xEye(sx+5,sy-1,3.5,BLINK.skull,DARK);
     /* cracks */
-    sv();
-    stroke(RED2, 0.7, 5*g, 0.5);
+    sv(); stk(RED2,0.7,6,0.6);
     ctx.beginPath(); ctx.moveTo(sx,sy-9); ctx.lineTo(sx-2,sy-4); ctx.lineTo(sx+1,sy); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(sx+6,sy-7); ctx.lineTo(sx+4,sy-3); ctx.stroke();
     rs();
-
-    /* blood drips */
-    drip(sx-3, sy+17, 7, 1.8, g);
-    drip(sx+3, sy+17, 5, 1.5, g);
-
-    /* connecting dark mass left */
-    fill(DARK,5*g,1);
+    /* connect left */
+    fill(DARK,5,1);
     ctx.beginPath();
     ctx.moveTo(sx-10,sy+2);
-    ctx.bezierCurveTo(sx-22,sy+0, sx-30,sy+8, sx-28,sy+18);
-    ctx.bezierCurveTo(sx-24,sy+14, sx-18,sy+10, sx-10,sy+10);
+    ctx.bezierCurveTo(sx-22,sy,sx-30,sy+8,sx-28,sy+18);
+    ctx.bezierCurveTo(sx-24,sy+14,sx-18,sy+10,sx-10,sy+10);
     ctx.fill();
-
-    /* connecting dark mass right */
-    fill(DARK,5*g,1);
+    /* connect right */
+    fill(DARK,5,1);
     ctx.beginPath();
     ctx.moveTo(sx+10,sy+2);
-    ctx.bezierCurveTo(sx+22,sy+0, sx+30,sy+8, sx+28,sy+18);
-    ctx.bezierCurveTo(sx+24,sy+14, sx+18,sy+10, sx+10,sy+10);
+    ctx.bezierCurveTo(sx+22,sy,sx+30,sy+8,sx+28,sy+18);
+    ctx.bezierCurveTo(sx+24,sy+14,sx+18,sy+10,sx+10,sy+10);
     ctx.fill();
-
     rs();
   }
 
-  /* ── RIGHT: GHOST (2–4 o'clock) ── */
   function drawGhost(g){
     sv();
-    const gx=136, gy=76;
-
-    /* body */
-    fill(D2, 7*g, 1);
+    const gx=136,gy=76;
+    fill(D2,8,1);
     ctx.beginPath();
-    ctx.moveTo(gx-8, gy-18);
-    ctx.bezierCurveTo(gx+6,gy-22, gx+16,gy-12, gx+14,gy+2);
-    ctx.bezierCurveTo(gx+14,gy+14, gx+8,gy+22, gx,gy+20);
-    ctx.bezierCurveTo(gx-10,gy+20, gx-16,gy+12, gx-14,gy);
-    ctx.bezierCurveTo(gx-14,gy-10, gx-8,gy-18, gx-8,gy-18);
+    ctx.moveTo(gx-8,gy-18);
+    ctx.bezierCurveTo(gx+6,gy-22,gx+16,gy-12,gx+14,gy+2);
+    ctx.bezierCurveTo(gx+14,gy+14,gx+8,gy+22,gx,gy+20);
+    ctx.bezierCurveTo(gx-10,gy+20,gx-16,gy+12,gx-14,gy);
+    ctx.bezierCurveTo(gx-14,gy-10,gx-8,gy-18,gx-8,gy-18);
     ctx.fill();
-
-    /* wavy skirt bottom */
-    fill(D2,4*g,1);
+    fill(D2,4,1);
     ctx.beginPath();
     ctx.moveTo(gx-14,gy+12);
-    ctx.bezierCurveTo(gx-14,gy+22, gx-8,gy+26, gx-4,gy+22);
-    ctx.bezierCurveTo(gx-2,gy+26, gx+4,gy+28, gx+8,gy+24);
-    ctx.bezierCurveTo(gx+10,gy+28, gx+14,gy+26, gx+14,gy+20);
+    ctx.bezierCurveTo(gx-14,gy+22,gx-8,gy+26,gx-4,gy+22);
+    ctx.bezierCurveTo(gx-2,gy+26,gx+4,gy+28,gx+8,gy+24);
+    ctx.bezierCurveTo(gx+10,gy+28,gx+14,gy+26,gx+14,gy+20);
     ctx.fill();
-
-    /* X eyes */
-    xEye(gx-5, gy-2, 4, g);
-    xEye(gx+5, gy-4, 4, g);
-
-    /* blood tears */
-    sv();
-    stroke(RED2,1,4*g,0.6);
-    ctx.beginPath(); ctx.moveTo(gx-5,gy+2); ctx.lineTo(gx-6,gy+10); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(gx+5,gy+0); ctx.lineTo(gx+6,gy+8); ctx.stroke();
-    rs();
-
     /* horns */
-    fill(BLD,4*g,1);
+    fill(BLD,4,1);
     ctx.beginPath(); ctx.moveTo(gx-8,gy-18); ctx.lineTo(gx-12,gy-28); ctx.lineTo(gx-4,gy-20); ctx.fill();
     ctx.beginPath(); ctx.moveTo(gx+2,gy-20); ctx.lineTo(gx+8,gy-30); ctx.lineTo(gx+10,gy-20); ctx.fill();
-
+    /* eyes */
+    xEye(gx-5,gy-2,4,BLINK.ghost,D2);
+    xEye(gx+5,gy-4,4,BLINK.ghost,D2);
+    /* blood tears */
+    sv(); stk(RED2,1,5,0.7);
+    ctx.beginPath(); ctx.moveTo(gx-5,gy+2); ctx.lineTo(gx-6,gy+10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx+5,gy); ctx.lineTo(gx+6,gy+8); ctx.stroke();
+    rs();
     rs();
   }
 
-  /* ── BOTTOM-RIGHT: SMALL DEMON (4–5 o'clock) ── */
   function drawDemon(g){
     sv();
-    const dx=118, dy=118;
-
-    fill(DARK,6*g,1);
+    const dx=118,dy=118;
+    fill(DARK,7,1);
     ctx.beginPath();
     ctx.moveTo(dx,dy-12);
     ctx.bezierCurveTo(dx+12,dy-14,dx+18,dy-4,dx+16,dy+8);
@@ -221,36 +278,23 @@
     ctx.bezierCurveTo(dx-8,dy+16,dx-14,dy+8,dx-12,dy);
     ctx.bezierCurveTo(dx-10,dy-8,dx-4,dy-12,dx,dy-12);
     ctx.fill();
-
-    /* horns */
-    fill(BLD,4*g,1);
+    fill(BLD,4,1);
     ctx.beginPath(); ctx.moveTo(dx-6,dy-12); ctx.lineTo(dx-9,dy-20); ctx.lineTo(dx-2,dy-13); ctx.fill();
     ctx.beginPath(); ctx.moveTo(dx+4,dy-12); ctx.lineTo(dx+8,dy-20); ctx.lineTo(dx+10,dy-12); ctx.fill();
-
-    /* eyes */
-    hollowEye(dx-4, dy, 3.5, g);
-    hollowEye(dx+4, dy-2, 3.5, g);
-
-    /* mouth */
-    sv();
-    stroke(RED,1.5,4*g,0.8);
+    hollowEye(dx-4,dy,3.5,BLINK.demon,DARK);
+    hollowEye(dx+4,dy-2,3.5,BLINK.demon,DARK);
+    sv(); stk(RED,1.5,5,0.85);
     ctx.beginPath();
     ctx.moveTo(dx-4,dy+8);
     ctx.bezierCurveTo(dx-2,dy+12,dx+2,dy+12,dx+4,dy+8);
     ctx.stroke();
     rs();
-
-    /* blood drip */
-    drip(dx, dy+15, 8, 2, g);
-
     rs();
   }
 
-  /* ── BOTTOM: LARGE DARK MASS (5–7 o'clock) ── */
   function drawBottomMass(g){
     sv();
-
-    fill(DARK,7*g,1);
+    fill(DARK,8,1);
     ctx.beginPath();
     ctx.moveTo(60,140);
     ctx.bezierCurveTo(50,148,40,146,38,136);
@@ -262,68 +306,52 @@
     ctx.bezierCurveTo(82,148,72,150,66,144);
     ctx.bezierCurveTo(64,148,60,148,60,140);
     ctx.fill();
-
-    /* cat ears on mass */
-    fill(DARK,4*g,1);
+    /* ears */
+    fill(DARK,4,1);
     ctx.beginPath(); ctx.moveTo(56,124); ctx.lineTo(50,112); ctx.lineTo(60,118); ctx.fill();
-    fill(BLD,3*g,0.7);
+    fill(BLD,3,0.7);
     ctx.beginPath(); ctx.moveTo(56,122); ctx.lineTo(52,114); ctx.lineTo(59,119); ctx.fill();
-
-    fill(DARK,4*g,1);
+    fill(DARK,4,1);
     ctx.beginPath(); ctx.moveTo(94,124); ctx.lineTo(100,112); ctx.lineTo(90,118); ctx.fill();
-    fill(BLD,3*g,0.7);
+    fill(BLD,3,0.7);
     ctx.beginPath(); ctx.moveTo(94,122); ctx.lineTo(98,114); ctx.lineTo(91,119); ctx.fill();
-
-    /* hollow eyes */
-    hollowEye(67, 128, 5, g);
-    hollowEye(83, 128, 5, g);
-
-    /* sharp teeth */
-    fill(WH,3*g,0.85);
+    /* eyes — each eye blinks independently with offset */
+    const bl2 = { ...BLINK.cat, phase: BLINK.cat.phase + 30 };
+    hollowEye(67,128,5,BLINK.cat,DARK);
+    hollowEye(83,128,5,bl2,DARK);
+    /* teeth */
+    fill(WH,4,0.88);
     [-8,-4,0,4,8].forEach(ox=>{
       ctx.beginPath();
       ctx.moveTo(75+ox,134); ctx.lineTo(74+ox,140); ctx.lineTo(77+ox,134);
       ctx.fill();
     });
-
-    /* blood on teeth */
-    fill(RED2,2*g,0.5);
+    fill(RED2,3,0.6);
     ctx.beginPath(); ctx.arc(75,140,2,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(83,140,2,0,Math.PI*2); ctx.fill();
-
     rs();
   }
 
-  /* ── LEFT: WINGED CREATURE (8–10 o'clock) ── */
   function drawWing(g){
     sv();
-
-    /* wing membrane */
-    fill(D2,6*g,1);
+    fill(D2,6,1);
     ctx.beginPath();
     ctx.moveTo(24,80);
     ctx.bezierCurveTo(8,70,4,54,12,42);
     ctx.bezierCurveTo(18,32,28,30,34,38);
     ctx.bezierCurveTo(28,46,24,60,28,72);
     ctx.fill();
-
-    /* wing ribs */
-    sv();
-    stroke(BLD,1,3*g,0.55);
+    sv(); stk(BLD,1,4,0.55);
     ctx.beginPath(); ctx.moveTo(12,42); ctx.lineTo(28,60); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(16,36); ctx.lineTo(30,54); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(20,32); ctx.lineTo(32,50); ctx.stroke();
     rs();
-
-    /* wing tip spikes */
-    fill(DARK,4*g,1);
+    fill(DARK,4,1);
     [[6,48],[4,60],[6,72]].forEach(([x,y])=>{
       ctx.beginPath();
       ctx.moveTo(x,y); ctx.lineTo(x-4,y-6); ctx.lineTo(x-4,y+6); ctx.closePath(); ctx.fill();
     });
-
-    /* body bulge */
-    fill(DARK,7*g,1);
+    fill(DARK,8,1);
     ctx.beginPath();
     ctx.moveTo(26,70);
     ctx.bezierCurveTo(20,60,22,46,30,42);
@@ -331,142 +359,136 @@
     ctx.bezierCurveTo(46,64,40,72,32,74);
     ctx.bezierCurveTo(28,74,26,72,26,70);
     ctx.fill();
-
-    /* single large eye */
-    xEye(36,56,5.5,g);
-
-    /* small secondary eye */
-    hollowEye(26,64,3,g);
-
-    /* blood drips from body */
-    drip(32,72,10,2,g);
-    drip(28,70,7,1.5,g);
-
-    /* connect to skull top-left */
-    fill(DARK,4*g,1);
+    xEye(36,56,5.5,BLINK.wing,DARK);
+    hollowEye(26,64,3,BLINK.wing,DARK);
+    fill(DARK,5,1);
     ctx.beginPath();
     ctx.moveTo(34,38);
     ctx.bezierCurveTo(36,26,48,18,58,20);
     ctx.bezierCurveTo(52,24,44,30,40,38);
     ctx.fill();
-
     rs();
   }
 
-  /* ── FLOATING EYEBALL (top-right, standalone) ── */
-  function drawFloatingEye(g,t){
+  function drawFloatingEye(g){
     sv();
-    const pulse = 0.9 + 0.1*Math.sin(t*0.045);
+    const bv  = blinkVal(BLINK.eye);
+    const px  = 0.88 + 0.12*Math.sin(t*0.045);   /* gentle pulse */
     const ex=120, ey=28;
 
-    /* outer glow */
-    fill(RED2, 14*g*pulse, 0.3);
-    ctx.beginPath(); ctx.arc(ex,ey,13*pulse,0,Math.PI*2); ctx.fill();
+    /* glow ring — constant minimum */
+    fill(RED2, 18, 0.45);
+    ctx.beginPath(); ctx.arc(ex,ey,13*px,0,Math.PI*2); ctx.fill();
 
-    /* eyeball */
-    fill(WH,8*g*pulse,0.9);
-    ctx.beginPath(); ctx.arc(ex,ey,10*pulse,0,Math.PI*2); ctx.fill();
+    fill(WH, 0, 0.92);
+    ctx.beginPath(); ctx.arc(ex,ey,10*px,0,Math.PI*2); ctx.fill();
 
-    /* red iris */
-    fill(RED2,8*g,0.88);
-    ctx.beginPath(); ctx.arc(ex,ey,6.5*pulse,0,Math.PI*2); ctx.fill();
+    fill(RED2, 9, 0.9);
+    ctx.beginPath(); ctx.arc(ex,ey,6.5*px,0,Math.PI*2); ctx.fill();
 
-    /* slit pupil */
+    /* slit pupil — stretches vertically on blink */
     fill(BLK,0,1);
+    const slitH = bv > 0.05 ? 5*px*(1-bv*0.8) : 5*px;
     ctx.beginPath();
-    ctx.ellipse(ex,ey,1.8,5*pulse,0,0,Math.PI*2); ctx.fill();
+    ctx.ellipse(ex,ey,1.8,slitH,0,0,Math.PI*2); ctx.fill();
 
-    /* vein lines */
-    sv();
-    stroke(RED2,0.8,4*g,0.45);
+    /* veins */
+    sv(); stk(RED2,0.8,5,0.5);
     ctx.beginPath(); ctx.moveTo(ex-9,ey-2); ctx.lineTo(ex-5,ey+2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(ex+6,ey-6); ctx.lineTo(ex+9,ey); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(ex,ey-9); ctx.lineTo(ex+2,ey-5); ctx.stroke();
     rs();
 
     /* highlight */
-    fill(WH,0,0.85);
+    fill(WH,0,0.88);
     ctx.beginPath(); ctx.arc(ex-3,ey-3,2.5,0,Math.PI*2); ctx.fill();
 
-    /* dangling stem with drop */
-    sv();
-    stroke(BLD,1.2,3*g,0.7);
-    ctx.beginPath(); ctx.moveTo(ex,ey+10); ctx.lineTo(ex+1,ey+18); ctx.stroke();
+    /* eyelid blink over eyeball */
+    if(bv > 0.02){
+      sv();
+      ctx.beginPath(); ctx.arc(ex,ey,10.5*px,0,Math.PI*2);
+      ctx.clip();
+      /* top eyelid comes down */
+      const lidY = ey - 10*px + 20*px*bv;
+      ctx.beginPath();
+      ctx.rect(ex-12,ey-12,24,lidY-(ey-12)+1);
+      ctx.fillStyle=DARK; ctx.shadowBlur=0; ctx.globalAlpha=1; ctx.fill();
+      /* bottom eyelid comes up */
+      const botY = ey + 10*px - 20*px*bv;
+      ctx.beginPath();
+      ctx.rect(ex-12,botY,24,12);
+      ctx.fill();
+      /* red eyelid edge */
+      ctx.strokeStyle=RED2; ctx.lineWidth=1; ctx.shadowColor=RED2;
+      ctx.shadowBlur=5; ctx.globalAlpha=0.8;
+      ctx.beginPath(); ctx.moveTo(ex-10,lidY); ctx.lineTo(ex+10,lidY); ctx.stroke();
+      rs();
+    }
+
+    /* dangling stem + animated blood drop */
+    sv(); stk(BLD,1.2,3,0.75);
+    ctx.beginPath(); ctx.moveTo(ex,ey+10*px); ctx.lineTo(ex+1,ey+18); ctx.stroke();
     rs();
-    fill(RED2,6*g*pulse,0.8);
-    ctx.beginPath(); ctx.arc(ex+1,ey+20,2.5,0,Math.PI*2); ctx.fill();
+    const dropPulse = 0.85 + 0.15*Math.sin(t*0.06);
+    fill(RED2, 8, 0.85);
+    ctx.beginPath(); ctx.arc(ex+1,ey+20,2.5*dropPulse,0,Math.PI*2); ctx.fill();
 
     rs();
   }
 
-  /* ── BLOOD DRIPS from top ring ── */
-  function drawRingDrips(g){
-    sv();
-    /* thin blood arcs at top of creature ring */
-    stroke(BLD,1.5,3*g,0.45);
-    ctx.beginPath();
-    ctx.arc(CX,CY, INNER+1, -Math.PI*0.55, -Math.PI*0.2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(CX,CY, INNER+1, Math.PI*1.25, Math.PI*1.55);
-    ctx.stroke();
-
-    /* drip at bottom */
-    drip(CX,CY+INNER, 10, 2, g*0.7);
-    drip(CX+14,CY+INNER-4, 7, 1.5, g*0.6);
-    drip(CX-12,CY+INNER-2, 6, 1.5, g*0.5);
-    rs();
-  }
-
-  /* ── GLOWING SPARKLE MOTES ── */
-  const motes = Array.from({length:14},(_,i)=>({
-    a : (i/14)*Math.PI*2,
-    r : INNER + 4 + Math.random()*16,
+  /* ── EMBERS — constant ambient particles ── */
+  const EMBERS = Array.from({length:18},(_,i)=>({
+    a : (i/18)*Math.PI*2 + Math.random()*0.5,
+    r : INNER + 2 + Math.random()*18,
     phase : Math.random()*Math.PI*2,
-    speed : 0.008 + Math.random()*0.006,
+    speed : 0.006 + Math.random()*0.006,
+    sz  : 0.8 + Math.random()*1.4,
   }));
 
-  function drawMotes(g){
-    motes.forEach((m,i)=>{
+  function drawEmbers(){
+    EMBERS.forEach(m=>{
       m.a += m.speed;
-      const pulse = Math.abs(Math.sin(t*0.05 + m.phase));
-      if(pulse < 0.35) return;
+      /* pulse between 0.45 and 1 — never fully off */
+      const pulse = 0.45 + 0.55*Math.abs(Math.sin(t*0.05 + m.phase));
       const [x,y] = p2c(m.a, m.r);
       sv();
-      fill(RED2, 8, 0.6*pulse*g);
-      ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill();
+      fill(RED2, 9, 0.5*pulse);
+      ctx.beginPath(); ctx.arc(x,y,m.sz,0,Math.PI*2); ctx.fill();
       rs();
     });
   }
 
-  /* ══════════════════════════════════════════
-     MAIN LOOP
-  ═══════════════════════════════════════════ */
+  /* ── CONSTANT RING GLOW ── */
+  function drawRingGlow(){
+    sv();
+    const atm = ctx.createRadialGradient(CX,CY,INNER-6,CX,CY,82);
+    atm.addColorStop(0,   'rgba(140,0,0,0.12)');
+    atm.addColorStop(0.55,'rgba(80,0,0,0.20)');
+    atm.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(CX,CY,82,0,Math.PI*2);
+    ctx.fillStyle=atm; ctx.globalAlpha=1; ctx.fill();
+    rs();
+  }
+
+  /* ══ MAIN LOOP ══ */
   function draw(){
     ctx.clearRect(0,0,W,H);
     t++;
-    const g  = 0.7  + 0.3 *Math.sin(t*0.032);
-    const g2 = 0.65 + 0.35*Math.sin(t*0.027 + 1.8);
 
-    /* dark atmospheric glow ring */
-    sv();
-    const atm = ctx.createRadialGradient(CX,CY,INNER-4,CX,CY,OUTER+14);
-    atm.addColorStop(0,   `rgba(100,0,0,${0.06*g})`);
-    atm.addColorStop(0.5, `rgba(60,0,0,${0.12*g})`);
-    atm.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.beginPath(); ctx.arc(CX,CY,OUTER+14,0,Math.PI*2);
-    ctx.fillStyle=atm; ctx.globalAlpha=1; ctx.fill();
-    rs();
+    /* gGlow: soft slow breathe, minimum 0.82 — never low */
+    gGlow = 0.82 + 0.18*Math.sin(t*0.025);
 
-    /* all creatures */
-    drawWing(g);
-    drawSkull(g);
-    drawFloatingEye(g2, t);
-    drawGhost(g);
-    drawDemon(g2);
-    drawBottomMass(g);
-    drawRingDrips(g);
-    drawMotes(g2);
+    updateDrips();
+
+    drawRingGlow();
+    drawWing(gGlow);
+    drawSkull(gGlow);
+    drawFloatingEye(gGlow);
+    drawGhost(gGlow);
+    drawDemon(gGlow);
+    drawBottomMass(gGlow);
+    drawDrips();
+    drawEmbers();
 
     window._decoRaf = raf = requestAnimationFrame(draw);
   }
@@ -474,4 +496,4 @@
   if(window._decoRaf) cancelAnimationFrame(window._decoRaf);
   draw();
 })();
-                      
+              
