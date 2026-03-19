@@ -1,12 +1,12 @@
 {
   "profile": {
-    "name": "T U Z H I 🥀",
-    "username": "tuzhicodes",
-    "nickname": "TuZhi Codes",
+    "name": "A S H I K 🥀",
+    "username": "ashikcodes",
+    "nickname": "AsHiK Codes",
     "avatar": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjHXDSo69quh8j6IsBuJ4zIW4yyQ3EFhlqVCkdTCA20DFp5rQuBbcY9EXBWD_1ATGvH0XDRiDU4DRXQy12P9EpexR2lEzXDF9RmzMnn1ti8ZNGIBJPIllIqY9vcv4u5WFYiK4dgWN7N9TyW7oy7KLaVT8LIkRfnLBr5IAfhnPiNop-rQLkz5gNHcKhyl-QO/s1024/file_00000000df18720881374740bf634620.png",
     "banner": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiPe_P3kVBwu8Z5WdZxDRFgce6ylIBVIYRfcpuhGVrG9tShMJWerTMU8goc3OEtpA5Zs-P8Oh832Vb6en1BCM6rqMdT4jm9KtFZv3bgmOJYp6Knq6TQ_uV9pvDhA0XC2ponyB4rqztXOb2BEe41R3o77T8m5Lh6JS73H2_e5kOd7ND_SajWMswzwgmyqhtr/s736/229f824d9c404edc56b7fd1efe9a4df9_1.jpg",
     "status": {
-      "text": "I Am TuZhi Codes ♥️",
+      "text": "I Am AsHik Codes ♥️",
       "type": "dnd"
     },
     "badges": [
@@ -16,7 +16,7 @@
         "color": "#9b59b6"
       },
       {
-        "name": "Winner Of TuZhi",
+        "name": "Winner Of Ashik",
         "image": "https://cdn3.emoji.gg/emojis/575836-chalice.png",
         "color": "#9b59b6"
       },
@@ -44,6 +44,11 @@
         "name": "Server Boosting",
         "image": "https://cdn.discordapp.com/badge-icons/bf01d1073931f921909045f3a39fd264.png",
         "color": "#3498db"
+      },
+      {
+        "name": "Bangla",
+        "image": "https://cdn.discordapp.com/badge-icons/bf01d1073931f921909045f3a39fd264.png",
+        "color": "#3498db"
       }
     ],
     "buttons": [
@@ -51,6 +56,13 @@
         "name": "Discord Support",
         "link": "https://discord.gg/gZKZQQdGMB",
         "icon": "fab fa-discord",
+        "gradient": ["#5865f2", "#4752c4"],
+        "glow": "rgba(88,101,242,0.35)"
+      },
+      {
+        "name": "Discord Support",
+        "link": "",
+        "icon": "fab fa-youtube",
         "gradient": ["#5865f2", "#4752c4"],
         "glow": "rgba(88,101,242,0.35)"
       },
@@ -79,6 +91,6 @@
     
     "about": "🐰 A Dreamer Who Never Sleeps !! 🐰\nDeveloper | Gamer | Content Creator",
     "decoration": { "file": "rainbow-ring" },
-    "footer": "© 2025 Made with ❤️ TuZhi Codes"
+    "footer": "© 2025 Made with ❤️ Ashik Codes"
   }
 }
